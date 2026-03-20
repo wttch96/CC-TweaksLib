@@ -1,46 +1,85 @@
-for _, name in ipairs(peripheral.getNames()) do
-    print(name, peripheral.getType(name))
+-- 使用 http 和 python 模块通信
+local HttpClient = {}
+HttpClient.__index = HttpClient
+
+function HttpClient:new(host)
+    self = setmetatable({}, HttpClient)
+    self.host = host
+    return self
 end
 
+function HttpClient:charImage(char, width, height, fg, bg)
+    local param = textutils.urlEncode(
+        string.format("%s,%d,%d,%s,%s", char, width, height, colors.toBlit(fg), colors.toBlit(bg))
+    )
+    local url = string.format("http://%s/convert?data=%s", self.host, param)
+
+    local response, err = http.get(url)
+    if not response then
+        -- 通信失败
+        print("HTTP error: " .. err)
+        return nil
+    end
+
+    local data = response.readAll()
+    response.close()
+
+    -- -- 保存所有
+    -- local f = io.open("x", "w")
+    -- if f then
+    --     f:write(data)
+    --     f:close()
+    -- end
+
+    return paintutils.parseImage(data)
+end
+
+local monitor = peripheral.find("monitor")
 
 
-local feDector = peripheral.wrap("left")
+local meBridge = peripheral.find("me_bridge")
 
-local methods = peripheral.getMethods("left")
+local cells = meBridge.getCells()
+for i, cell in ipairs(cells) do
+    print("Cell: " .. i)
+    for k, v in pairs(cell) do
+        print(k, v) 
+end
+end
 
+-- 16种基本颜色
+-- 0  1  2   3   4  5 6  7  8   9  a b  c  d  e  f
+-- 白 橙 品红 浅蓝 黄 绿 粉 灰 浅灰 青 紫 蓝 棕 绿 红 黑
+local text = "物品磁盘占用"
+local client = HttpClient:new("10.2.203.225:8080")
 
-print(feDector.getEnergy())
-print(feDector.getEnergyCapacity())
+local toolbarHeight = 12
 
-local mon = peripheral.wrap("top")
+while true do 
+    -- 切换 term 到显示器
+    local oldTerm = term.redirect(monitor)
 
-while true do
-    local energy = feDector.getEnergy()
-    local maxEnergy = feDector.getEnergyCapacity()
-    local percent = energy / maxEnergy
-    print("FE: per", percent)
+    monitor.clear()
+    monitor.setBackgroundColor(colors.black)
+    monitor.setTextScale(0.5)
+    monitor.clear()
+
+    local image = client:charImage(text, 100, 14, colors.black, colors.pink)
+    if image then
+        paintutils.drawImage(image, 2, 10)
+    end
+
+    paintutils.drawFilledBox(0, 0, 16, toolbarHeight, image and colors.green or colors.red)
     
-    mon.clear()
-    mon.setTextScale(1)
-    mon.setCursorPos(1,1)
-    mon.write("FE存储:" .. math.floor(percent*1000) / 10 .. "%.    " .. string.format("%.2f", energy/1000000) .. "/" .. string.format("%.2f", maxEnergy/1000000) .. "M FE")
 
-    -- 绘制进度条
-    local width, height = mon.getSize()
-    local barWidth = width - 2
-    local filled = math.floor(barWidth * percent)
+    -- debug 信息显示
+    local w, h = monitor.getSize()
+    monitor.setCursorPos(1, h)
+    monitor.setTextColor(colors.green)
+    -- 
+    monitor.write("size: " .. w .. "x" .. h .. " scale:" .. monitor.getTextScale())
+    term.redirect(oldTerm)
 
-    -- 背景先清空
-    mon.setBackgroundColor(colors.gray)
-    mon.setCursorPos(2,2)
-    mon.write(string.rep(" ", barWidth))
-
-    -- 绘制已充能部分
-    mon.setBackgroundColor(colors.green)
-    mon.setCursorPos(2,2)
-    mon.write(string.rep(" ", filled))
-
-    -- 恢复文字颜色
-    mon.setBackgroundColor(colors.black)
-    mon.setTextColor(colors.white)
+    ::continue::
+    sleep(1)
 end
